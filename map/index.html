@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Victorian Power Network</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <style>
+    html, body { height: 100%; margin: 0; font-family: sans-serif; }
+    body { display: flex; flex-direction: column; }
+    #map { flex: 1; }
+    footer { padding: 6px 10px; font-size: 12px; background: #f4f4f4; border-top: 1px solid #ccc; }
+    .legend { background: white; padding: 8px 10px; border-radius: 4px; line-height: 1.5; font-size: 12px; }
+    .legend .swatch { display: inline-block; width: 28px; margin-right: 6px; vertical-align: middle; }
+    .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%;
+                   margin: 0 15px 0 9px; vertical-align: middle; border: 1px solid #333; }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <footer>
+    Power line and substation data: (c) Commonwealth of Australia (Geoscience Australia) 2026,
+    Electricity Infrastructure, licensed under CC BY 4.0
+    (<a href="https://creativecommons.org/licenses/by/4.0/">https://creativecommons.org/licenses/by/4.0/</a>).
+    Filtered to Victoria and reprojected from GDA2020 (EPSG:7844) for web display.
+    Not endorsed by Geoscience Australia. Indicative only; not a substitute for Dial Before You Dig.
+  </footer>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    // Line classes by capacity_kv, highest first. A line uses the first class it reaches.
+    const LINE_CLASSES = [
+      { minKv: 500, label: "500 kV",     color: "#d62728", weight: 4 },
+      { minKv: 330, label: "330-400 kV", color: "#ff7f0e", weight: 3.5 },
+      { minKv: 220, label: "220-275 kV", color: "#2ca02c", weight: 3 },
+      { minKv: 110, label: "110-132 kV", color: "#1f77b4", weight: 2 },
+      { minKv: 0,   label: "Below 110 kV", color: "#7f7f7f", weight: 1.5 },
+    ];
+    const CROSS_BORDER_COLOR = "#9467bd";  // features with state "NSW"
+    const SUBSTATION_COLOR = "#ffd700";
+
+    function lineClass(kv) {
+      return LINE_CLASSES.find(c => (kv ?? 0) >= c.minKv);
+    }
+
+    function isCrossBorder(feature) {
+      return feature.properties.state === "NSW";
+    }
+
+    function lineStyle(feature) {
+      const c = lineClass(feature.properties.capacity_kv);
+      if (isCrossBorder(feature)) {
+        return { color: CROSS_BORDER_COLOR, weight: c.weight, dashArray: "6 6" };
+      }
+      return { color: c.color, weight: c.weight };
+    }
+
+    function substationMarker(feature, latlng) {
+      return L.circleMarker(latlng, {
+        radius: 4,
+        color: "#333",
+        weight: 1,
+        fillColor: isCrossBorder(feature) ? CROSS_BORDER_COLOR : SUBSTATION_COLOR,
+        fillOpacity: 0.9,
+      });
+    }
+
+    function popupText(feature, kvField) {
+      const p = feature.properties;
+      const kv = p[kvField] == null ? "unknown" : p[kvField] + " kV";
+      return `<b>${p.feature_name}</b><br>${kv}` + (isCrossBorder(feature) ? "<br>(NSW, cross-border)" : "");
+    }
+
+    const map = L.map("map").setView([-36.9, 145.0], 7);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+    }).addTo(map);
+
+    async function loadGeoJson(path) {
+      const response = await fetch(path);
+      if (!response.ok) throw new Error(`Could not load ${path}: ${response.status}`);
+      return response.json();
+    }
+
+    async function main() {
+      const [lines, substations] = await Promise.all([
+        loadGeoJson("../data/power_lines_vic.geojson"),
+        loadGeoJson("../data/substations_vic.geojson"),
+      ]);
+
+      const lineLayer = L.geoJSON(lines, {
+        style: lineStyle,
+        onEachFeature: (f, layer) => layer.bindPopup(popupText(f, "capacity_kv")),
+      }).addTo(map);
+
+      L.geoJSON(substations, {
+        pointToLayer: substationMarker,
+        onEachFeature: (f, layer) => layer.bindPopup(popupText(f, "voltage_kv")),
+      }).addTo(map);
+
+      map.fitBounds(lineLayer.getBounds());
+    }
+
+    // Legend in the bottom-right corner.
+    const legend = L.control({ position: "bottomright" });
+    legend.onAdd = function () {
+      const div = L.DomUtil.create("div", "legend");
+      const lineRows = LINE_CLASSES.map(c =>
+        `<div><span class="swatch" style="border-top: ${c.weight}px solid ${c.color}"></span>${c.label}</div>`);
+      div.innerHTML =
+        "<b>Power lines (capacity)</b>" + lineRows.join("") +
+        `<div><span class="swatch" style="border-top: 3px dashed ${CROSS_BORDER_COLOR}"></span>Cross-border (NSW)</div>` +
+        "<b>Substations</b>" +
+        `<div><span class="dot" style="background: ${SUBSTATION_COLOR}"></span>Victoria</div>` +
+        `<div><span class="dot" style="background: ${CROSS_BORDER_COLOR}"></span>Cross-border (NSW)</div>`;
+      return div;
+    };
+    legend.addTo(map);
+
+    main().catch(err => alert(err.message));
+  </script>
+</body>
+</html>
