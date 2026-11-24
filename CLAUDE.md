@@ -18,7 +18,7 @@ Power system modelling tool: maps Victorian electricity transmission infrastruct
 Data is CC BY 4.0, (c) Commonwealth of Australia (Geoscience Australia) 2026. Any published map or page must carry the attribution footer already in `map/index.html` (credit, licence link, note that data was filtered and reprojected, not endorsed, indicative only). Natural Earth (public domain) must be credited if its borders are shown. Any new data source needs its own attribution check before publishing.
 
 ## Conventions
-- Clean, minimal code; no defensive error handling.
+- Code should be easy to read.
 - Work on a branch and open a pull request; CI must pass.
 - Do not change `data/` or the pipeline script unless asked.
 
